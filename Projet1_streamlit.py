@@ -1,18 +1,27 @@
-
+import streamlit as st
+import os
+import random
 import nltk
-from nltk.stem import WordNetLemmatizer
-from nltk.corpus import wordnet
+from rank_bm25 import BM25Okapi
+from collections import defaultdict
 from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
+from nltk.corpus import wordnet
 
+
+# Assurez-vous que les ressources NLTK nécessaires sont téléchargées
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('averaged_perceptron_tagger')
+
+# Initialise le lemmatiseur et l'ensemble des stopwords
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
-# Ensure NLTK resources are downloaded
-nltk.download('averaged_perceptron_tagger')
-
+# Fonction pour obtenir la nature grammaticale d'un mot pour la lemmatisation
 def get_wordnet_pos(word):
-    """Function to get the part of speech tag for lemmatization."""
     tag = nltk.pos_tag([word])[0][1][0].upper()
     tag_dict = {"J": wordnet.ADJ,
                 "N": wordnet.NOUN,
@@ -20,37 +29,17 @@ def get_wordnet_pos(word):
                 "R": wordnet.ADV}
     return tag_dict.get(tag, wordnet.NOUN)
 
+# Fonction pour un prétraitement avancé du texte
 def advanced_preprocess(text):
     word_tokens = word_tokenize(text.lower())
-    filtered_words = [lemmatizer.lemmatize(w, get_wordnet_pos(w)) for w in word_tokens if w not in stop_words and len(w) > 2]
+    filtered_words = [
+        lemmatizer.lemmatize(w, get_wordnet_pos(w)) for w in word_tokens 
+        if w not in stop_words and len(w) > 2
+    ]
     return filtered_words
 
-# Revising the code with the suggested optimizations
 
-# Updated code with optimizations
-#optimized_code = """
-import os
-import streamlit as st
-from rank_bm25 import BM25Okapi
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
-from collections import defaultdict
-
-# Download necessary NLTK data
-nltk.download('stopwords')
-nltk.download('punkt')
-nltk.download('wordnet')
-
-# Initialize the lemmatizer
-lemmatizer = WordNetLemmatizer()
-
-# Initialize stopwords set once
-stopwords_set = set(stopwords.words('english'))
-
-# Auxiliary functions
-@st.cache_data(allow_output_mutation=True)
+@st.cache_data
 
 def loadNFCorpus():
     dir_path = "./project1-2023/"
@@ -84,31 +73,41 @@ def loadNFCorpus():
 
     return dicDoc, dicReq, dicReqDoc
 
-def text2TokenList(text):
-    word_tokens = word_tokenize(text.lower())
-    lemmatized_tokens = [
-        lemmatizer.lemmatize(word) for word in word_tokens 
-        if word not in stopwords_set and len(word) > 2
-    ]
-    return lemmatized_tokens
 
-# Load NFCorpus data and initialize BM25
+# Fonction pour charger les requêtes de l'ensemble de données NFCorpus
+def load_queries(dicReq):
+    return list(dicReq.values())
+
+# Fonction pour sélectionner une requête de manière aléatoire
+def get_random_query(queries):
+    return random.choice(queries)
+
+# Charge les données NFCorpus et initialise BM25
 dicDoc, dicReq, dicReqDoc = loadNFCorpus()
-corpus = [text2TokenList(doc) for doc in dicDoc.values()]
+corpus = [advanced_preprocess(doc) for doc in dicDoc.values()]
 bm25 = BM25Okapi(corpus)
 
-# Streamlit interface
+# Interface Streamlit pour la recherche d'informations médicales
 st.title("Recherche d'Informations Médicales")
-st.write("Entrez votre requête pour rechercher dans le NFCorpus.")
+st.write("Entrez votre requête ou tirez-en une au hasard pour rechercher dans le NFCorpus.")
 
-# Input field for the query
-user_query = st.text_input("Requête", "")
+# Champ de saisie pour la requête
+user_query = st.text_input("Posez votre question", "")
 
-# Search button
-if st.button("Rechercher"):
-    preprocessed_query = text2TokenList(user_query)
-    # More code to handle the search and display results goes here...
+# Recherche la requête saisie par l'utilisateur
+if st.button("Rechercher") and user_query:
+    preprocessed_query = advanced_preprocess(user_query)
+    # Récupère les scores de la requête traitée par BM25
+    doc_scores = bm25.get_scores(preprocessed_query)
+    # Trie les scores et récupère les indices des documents
+    top_doc_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)
+    # Affiche les documents les plus pertinents
+    for idx in top_doc_indices[:5]:  # Affiche les 5 premiers résultats
+        st.write(f"Document ID: {idx}, Score: {doc_scores[idx]}")
+        st.write(dicDoc[idx])
+        st.write("-----")
 
-
-# Returning the optimized code for further instructions or modifications
-#optimized_code[:2000]  # Displaying first 2000 characters for review
+# Bouton pour obtenir une requête aléatoire de NFCorpus
+if st.button('Question aléatoire'):
+    random_query = get_random_query(load_queries(dicReq))
+    st.write('Question aléatoire sélectionnée :', random_query)
